@@ -1,186 +1,407 @@
+"""
+AutomaticTelReader - Applicazione per il monitoraggio automatico dei messaggi Telegram
+
+Questa applicazione permette di ricevere e salvare automaticamente tutti i messaggi
+Telegram ricevuti, con supporto per immagini, contatti e gestione delle chat.
+
+Autore: jeckoe
+Versione: 1.0
+"""
+
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QListWidget, QLineEdit, QMessageBox, QHBoxLayout, QDialog, QTextEdit, QInputDialog, QDialogButtonBox, QListView, QAbstractItemView, QListWidgetItem
-from PySide6.QtCore import QThread, Signal, Qt
-from telethon import TelegramClient, events
 import os
 import json
 import datetime
-from telethon.tl.types import User, Channel, Chat
-from PySide6.QtGui import QIcon, QFont, QPixmap, QImage
 import base64
 import uuid
-IMAGES_FILE = 'images.json'
 
+# Import PySide6 per l'interfaccia grafica
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, 
+                               QPushButton, QListWidget, QLineEdit, QMessageBox, 
+                               QHBoxLayout, QDialog, QTextEdit, QInputDialog, 
+                               QDialogButtonBox, QListView, QAbstractItemView, 
+                               QListWidgetItem)
+from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtGui import QIcon, QFont, QPixmap, QImage
+
+# Import Telethon per l'integrazione con Telegram
+from telethon import TelegramClient, events
+from telethon.tl.types import User, Channel, Chat
+
+# Costanti per i file di configurazione e dati
+IMAGES_FILE = 'images.json'        # File per il salvataggio delle immagini (base64)
+SESSION_FILE = 'session.session'   # File di sessione Telegram
+MESSAGES_FILE = 'messages.json'    # File per la cronologia dei messaggi
+CONFIG_FILE = 'config.json'        # File di configurazione (credenziali API)
+CONTACTS_FILE = 'contacts.json'    # File per il database dei contatti
+
+# Placeholder per le credenziali API (verranno caricate da config.json)
 API_ID = ''
 API_HASH = ''
-SESSION_FILE = 'session.session'
-MESSAGES_FILE = 'messages.json'
-CONFIG_FILE = 'config.json'
-CONTACTS_FILE = 'contacts.json'
 
 class LoginWidget(QWidget):
+    """
+    Widget per la gestione del login e autenticazione Telegram.
+    
+    Questa classe gestisce l'interfaccia di login, permettendo all'utente di inserire
+    le credenziali API Telegram (API ID, API Hash, numero di telefono) e salvandole
+    per usi futuri in un file di configurazione.
+    
+    Attributes:
+        on_login (callable): Callback da chiamare quando il login viene effettuato
+        api_id_input (QLineEdit): Campo di input per l'API ID
+        api_hash_input (QLineEdit): Campo di input per l'API Hash
+        phone_input (QLineEdit): Campo di input per il numero di telefono
+        login_btn (QPushButton): Pulsante per confermare il login
+    """
+    
     def __init__(self, on_login):
+        """
+        Inizializza il widget di login.
+        
+        Args:
+            on_login (callable): Funzione callback da chiamare quando il login è completato
+        """
         super().__init__()
         self.on_login = on_login
         self.setWindowTitle('Login Telegram')
+        
+        # Configura il layout principale
         layout = QVBoxLayout()
+        
+        # Crea i campi di input per le credenziali
         self.api_id_input = QLineEdit()
         self.api_id_input.setPlaceholderText('API ID')
+        
         self.api_hash_input = QLineEdit()
         self.api_hash_input.setPlaceholderText('API Hash')
+        
         self.phone_input = QLineEdit()
         self.phone_input.setPlaceholderText('Numero di telefono')
+        
+        # Crea il pulsante di login
         self.login_btn = QPushButton('Login')
         self.login_btn.clicked.connect(self.try_login)
+        
+        # Aggiunge gli elementi al layout
         layout.addWidget(QLabel('Inserisci le credenziali Telegram:'))
         layout.addWidget(self.api_id_input)
         layout.addWidget(self.api_hash_input)
         layout.addWidget(self.phone_input)
         layout.addWidget(self.login_btn)
+        
         self.setLayout(layout)
+        
+        # Carica le credenziali salvate precedentemente, se presenti
         self.load_saved_credentials()
 
     def load_saved_credentials(self):
+        """
+        Carica le credenziali salvate dal file di configurazione.
+        
+        Se il file config.json esiste e contiene credenziali valide,
+        riempie automaticamente i campi di input per comodità dell'utente.
+        """
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                
+                # Popola i campi con i dati salvati
                 self.api_id_input.setText(str(data.get('api_id', '')))
                 self.api_hash_input.setText(data.get('api_hash', ''))
                 self.phone_input.setText(data.get('phone', ''))
             except Exception:
+                # Se c'è un errore nella lettura, ignora silenziosamente
                 pass
 
     def try_login(self):
+        """
+        Gestisce il tentativo di login validando i campi e salvando le credenziali.
+        
+        Valida che tutti i campi necessari siano compilati, salva le credenziali
+        nel file di configurazione e chiama la callback di login.
+        """
+        # Ottiene e pulisce i valori dai campi di input
         api_id = self.api_id_input.text().strip()
         api_hash = self.api_hash_input.text().strip()
         phone = self.phone_input.text().strip()
+        
+        # Verifica che tutti i campi siano compilati
         if not (api_id and api_hash and phone):
             QMessageBox.warning(self, 'Errore', 'Tutti i campi sono obbligatori!')
             return
-        # Salva le credenziali
+        
+        # Salva le credenziali nel file di configurazione
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump({'api_id': api_id, 'api_hash': api_hash, 'phone': phone}, f)
+            json.dump({
+                'api_id': api_id, 
+                'api_hash': api_hash, 
+                'phone': phone
+            }, f)
+        
+        # Chiama la callback di login con le credenziali
         self.on_login(api_id, api_hash, phone)
 
 class MessageListener(QThread):
+    """
+    Thread separato per l'ascolto dei messaggi Telegram in tempo reale.
+    
+    Questa classe gestisce la connessione con l'API Telegram e riceve automaticamente
+    tutti i nuovi messaggi, salvandoli localmente e emettendo segnali per aggiornare
+    l'interfaccia utente.
+    
+    Signals:
+        new_message (Signal): Emesso quando viene ricevuto un nuovo messaggio
+    
+    Attributes:
+        api_id (str): ID dell'API Telegram
+        api_hash (str): Hash dell'API Telegram  
+        phone (str): Numero di telefono dell'utente
+        client (TelegramClient): Client Telegram per la comunicazione
+        start_time (str): Timestamp di inizio della sessione
+    """
+    
+    # Segnale emesso quando arriva un nuovo messaggio
     new_message = Signal(dict)
+    
     def __init__(self, api_id, api_hash, phone):
+        """
+        Inizializza il listener dei messaggi.
+        
+        Args:
+            api_id (str): ID dell'API Telegram
+            api_hash (str): Hash dell'API Telegram
+            phone (str): Numero di telefono per l'autenticazione
+        """
         super().__init__()
         self.api_id = api_id
         self.api_hash = api_hash
         self.phone = phone
         self.client = None
+        
+        # Registra il timestamp di inizio per filtrare i messaggi della sessione corrente
         self.start_time = datetime.datetime.utcnow().isoformat()
 
     def run(self):
+        """
+        Metodo principale del thread che avvia il loop asincrono per Telegram.
+        
+        Questo metodo viene chiamato automaticamente quando il thread viene avviato.
+        """
         import asyncio
+        # Avvia il loop asincrono per gestire la comunicazione con Telegram
         asyncio.run(self._main())
 
     async def _main(self):
+        """
+        Metodo asincrono principale per la gestione della connessione Telegram.
+        
+        Configura il client Telegram, gestisce l'autenticazione e imposta
+        l'handler per i nuovi messaggi.
+        """
+        # Crea e avvia il client Telegram
         self.client = TelegramClient(SESSION_FILE, self.api_id, self.api_hash)
         await self.client.start(phone=self.phone)
+        
+        # Handler per i nuovi messaggi
         @self.client.on(events.NewMessage)
         async def handler(event):
+            """
+            Gestisce ogni nuovo messaggio ricevuto.
+            
+            Args:
+                event: Evento del messaggio ricevuto da Telegram
+            """
+            # Ottiene informazioni sul mittente del messaggio
             sender = await event.get_sender()
             now = datetime.datetime.utcnow().isoformat()
             sender_info = self.extract_sender_info(sender)
-            # Salva info gruppo se presente
+            
+            # Gestisce le informazioni della chat/gruppo se presente
             chat_info = None
             if hasattr(event, 'chat') and event.chat:
                 chat_info = self.extract_sender_info(event.chat)
+            
+            # Gestisce le immagini allegate al messaggio
             image_id = None
             if hasattr(event.message, 'photo') and event.message.photo:
-                # Scarica la foto in memoria e codifica in base64
+                # Scarica l'immagine in memoria e la codifica in base64
                 img_bytes = await self.client.download_media(event.message.photo, file=bytes)
                 if img_bytes:
                     image_id = str(uuid.uuid4())
                     self.save_image(image_id, img_bytes, now, sender_info, chat_info)
+            
+            # Crea l'oggetto messaggio con tutte le informazioni
             msg = {
-                'from_id': str(event.sender_id),
-                'text': event.raw_text,
-                'date': str(event.date),
-                'received_at': now,
-                'sender': sender_info,
-                'chat': chat_info if chat_info else None,
-                'image_id': image_id
+                'from_id': str(event.sender_id),        # ID del mittente
+                'text': event.raw_text,                 # Testo del messaggio
+                'date': str(event.date),                # Data/ora originale del messaggio
+                'received_at': now,                     # Timestamp di ricezione
+                'sender': sender_info,                  # Informazioni del mittente
+                'chat': chat_info if chat_info else None,  # Informazioni della chat
+                'image_id': image_id                    # ID dell'immagine (se presente)
             }
+            
+            # Salva il messaggio e aggiorna i contatti
             self.save_message(msg)
             self.save_contact(sender_info)
             if chat_info:
                 self.save_contact(chat_info)
+            
+            # Emette il segnale per aggiornare l'interfaccia utente
             self.new_message.emit(msg)
+        
+        # Mantiene la connessione attiva fino alla disconnessione
         await self.client.run_until_disconnected()
 
     def extract_sender_info(self, sender):
+        """
+        Estrae le informazioni dettagliate da un oggetto sender di Telegram.
+        
+        Questa funzione analizza il tipo di sender (User, Channel, Chat) e estrae
+        tutte le informazioni rilevanti per la memorizzazione e visualizzazione.
+        
+        Args:
+            sender: Oggetto sender di Telegram (User, Channel, Chat, o None)
+            
+        Returns:
+            dict: Dizionario contenente le informazioni estratte del sender
+        """
         if sender is None:
             return {'type': 'unknown'}
+        
+        # Inizializza il dizionario delle informazioni con l'ID
         info = {'id': str(getattr(sender, 'id', ''))}
+        
         if isinstance(sender, User):
+            # Gestisce gli utenti individuali
             info['type'] = 'user'
             info['first_name'] = getattr(sender, 'first_name', '')
             info['last_name'] = getattr(sender, 'last_name', '')
             info['username'] = getattr(sender, 'username', '')
             info['phone'] = getattr(sender, 'phone', '')
-            info['is_self'] = getattr(sender, 'is_self', False)
+            info['is_self'] = getattr(sender, 'is_self', False)  # Indica se è l'utente stesso
+            
         elif isinstance(sender, Channel):
+            # Gestisce i canali Telegram
             info['type'] = 'channel'
             info['title'] = getattr(sender, 'title', '')
             info['username'] = getattr(sender, 'username', '')
-            info['is_verified'] = getattr(sender, 'verified', False)
-            info['is_scam'] = getattr(sender, 'scam', False)
-            info['is_gigagroup'] = getattr(sender, 'gigagroup', False)
+            info['is_verified'] = getattr(sender, 'verified', False)  # Canale verificato
+            info['is_scam'] = getattr(sender, 'scam', False)          # Canale segnalato come scam
+            info['is_gigagroup'] = getattr(sender, 'gigagroup', False)  # Gigagruppo
+            
         elif isinstance(sender, Chat):
+            # Gestisce i gruppi normali
             info['type'] = 'group'
             info['title'] = getattr(sender, 'title', '')
             info['username'] = getattr(sender, 'username', '')
-            info['is_megagroup'] = getattr(sender, 'megagroup', False)
+            info['is_megagroup'] = getattr(sender, 'megagroup', False)  # Supergruppo
+            
         else:
+            # Tipo di sender non riconosciuto
             info['type'] = 'unknown'
+            
         return info
 
     def save_message(self, msg):
+        """
+        Salva un messaggio nel file JSON della cronologia.
+        
+        Aggiunge il nuovo messaggio alla lista esistente di messaggi salvati
+        nel file messages.json, mantenendo la cronologia completa.
+        
+        Args:
+            msg (dict): Dizionario contenente i dati del messaggio da salvare
+        """
         messages = []
+        
+        # Carica i messaggi esistenti se il file esiste
         if os.path.exists(MESSAGES_FILE):
             try:
                 with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
                     messages = json.load(f)
             except Exception:
+                # Se c'è un errore nella lettura, inizializza lista vuota
                 messages = []
+        
+        # Aggiunge il nuovo messaggio alla lista
         messages.append(msg)
+        
+        # Salva la lista aggiornata nel file
         with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
             json.dump(messages, f, ensure_ascii=False, indent=2)
 
     def save_contact(self, sender):
+        """
+        Salva o aggiorna le informazioni di un contatto nel database.
+        
+        Mantiene un database di tutti i contatti incontrati, aggiornando
+        le informazioni esistenti o aggiungendo nuovi contatti.
+        
+        Args:
+            sender (dict): Dizionario contenente le informazioni del contatto
+        """
         contacts = {}
+        
+        # Carica i contatti esistenti se il file esiste
         if os.path.exists(CONTACTS_FILE):
             try:
                 with open(CONTACTS_FILE, 'r', encoding='utf-8') as f:
                     contacts = json.load(f)
             except Exception:
+                # Se c'è un errore nella lettura, inizializza dizionario vuoto
                 contacts = {}
+        
+        # Ottiene l'ID del sender come stringa
         sid = str(sender.get('id', ''))
+        
         if sid and sid not in contacts:
+            # Nuovo contatto: aggiunge tutto il dizionario
             contacts[sid] = sender
         elif sid:
+            # Contatto esistente: aggiorna le informazioni
             contacts[sid].update(sender)
+        
+        # Salva il database contatti aggiornato
         with open(CONTACTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(contacts, f, ensure_ascii=False, indent=2)
 
     def save_image(self, image_id, img_bytes, date, sender_info, chat_info):
+        """
+        Salva un'immagine ricevuta codificandola in base64.
+        
+        Le immagini vengono salvate nel file images.json come stringhe base64
+        insieme ai metadati (data, mittente, chat).
+        
+        Args:
+            image_id (str): ID univoco per l'immagine
+            img_bytes (bytes): Dati binari dell'immagine
+            date (str): Timestamp di ricezione
+            sender_info (dict): Informazioni del mittente
+            chat_info (dict): Informazioni della chat (se presente)
+        """
         images = {}
+        
+        # Carica le immagini esistenti se il file esiste
         if os.path.exists(IMAGES_FILE):
             try:
                 with open(IMAGES_FILE, 'r', encoding='utf-8') as f:
                     images = json.load(f)
             except Exception:
+                # Se c'è un errore nella lettura, inizializza dizionario vuoto
                 images = {}
+        
+        # Crea l'entry per l'immagine con tutti i metadati
         images[image_id] = {
-            'base64': base64.b64encode(img_bytes).decode('utf-8'),
-            'date': date,
-            'sender': sender_info,
-            'chat': chat_info
+            'base64': base64.b64encode(img_bytes).decode('utf-8'),  # Immagine codificata
+            'date': date,                                           # Data di ricezione
+            'sender': sender_info,                                  # Info mittente
+            'chat': chat_info                                       # Info chat
         }
+        
+        # Salva il database immagini aggiornato
         with open(IMAGES_FILE, 'w', encoding='utf-8') as f:
             json.dump(images, f, ensure_ascii=False, indent=2)
 
