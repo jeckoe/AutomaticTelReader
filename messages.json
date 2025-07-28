@@ -1,1 +1,25 @@
-[]
+[
+  {
+    "from_id": "681071592",
+    "text": "",
+    "date": "2025-07-28 16:30:12+00:00",
+    "received_at": "2025-07-28T16:30:12.122593",
+    "sender": {
+      "id": "681071592",
+      "type": "user",
+      "first_name": "Andrea",
+      "last_name": "Vian",
+      "username": "vian_andrea00",
+      "phone": "393515834441",
+      "is_self": true
+    },
+    "chat": {
+      "id": "4919354651",
+      "type": "group",
+      "title": "Testgruppo",
+      "username": "",
+      "is_megagroup": false
+    },
+    "image_id": "4619edfb-6b41-4663-a81a-9e4a1c5bbd5b"
+  }
+]
