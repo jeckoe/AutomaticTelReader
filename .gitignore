@@ -9,6 +9,7 @@ config.json
 messages.json
 contacts.json
 images.json
+data/
 
 # Cache Python
 __pycache__/

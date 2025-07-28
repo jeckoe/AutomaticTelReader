@@ -38,6 +38,10 @@ pip install -r AutomaticTelReader/requirements.txt
 
 3. Esegui l'applicazione:
 ```bash
+# Opzione 1: Usa lo script di avvio
+python run.py
+
+# Opzione 2: Esegui direttamente il modulo principale
 python AutomaticTelReader/main.py
 ```
 
@@ -55,20 +59,29 @@ Le credenziali vengono salvate localmente nel file `config.json` (escluso dal ve
 
 ```
 AutomaticTelReader/
-├── AutomaticTelReader/
-│   ├── main.py              # File principale dell'applicazione
-│   └── requirements.txt     # Dipendenze Python
+├── README.md               # Documentazione del progetto
 ├── .gitignore              # File da escludere dal versioning
-└── README.md               # Documentazione (questo file)
+├── run.py                  # Script di avvio principale
+├── AutomaticTelReader/
+│   ├── main.py             # Codice principale dell'applicazione
+│   └── requirements.txt    # Dipendenze Python
+└── data/                   # Directory per file di dati (esclusa dal versioning)
+    ├── session.session     # File di sessione Telegram (auto-generato)
+    ├── config.json         # Configurazione utente (auto-generato)
+    ├── messages.json       # Cronologia messaggi (auto-generato)
+    ├── contacts.json       # Database contatti (auto-generato)
+    └── images.json         # Database immagini (auto-generato)
 ```
 
 ### File di dati (generati automaticamente)
 
-- `session.session`: File di sessione Telegram (escluso dal versioning)
-- `config.json`: Configurazione utente (escluso dal versioning)
-- `messages.json`: Cronologia messaggi salvati
-- `contacts.json`: Database contatti
-- `images.json`: Database immagini ricevute (codificate in base64)
+Tutti i file di dati vengono salvati nella directory `data/` per mantenere organizzato il progetto:
+
+- `session.session`: File di sessione Telegram (escluso dal versioning per sicurezza)
+- `config.json`: Configurazione utente con credenziali API (escluso dal versioning)
+- `messages.json`: Cronologia completa dei messaggi ricevuti
+- `contacts.json`: Database di tutti i contatti incontrati
+- `images.json`: Database delle immagini ricevute (codificate in base64)
 
 ## Utilizzo
 
@@ -97,18 +110,39 @@ AutomaticTelReader/
 
 ## Struttura del Codice
 
-Il codice è organizzato in diverse classi principali:
+Il codice è ben organizzato e completamente documentato in italiano, con docstrings dettagliate per ogni classe e metodo:
 
-### Classi UI
-- `LoginWidget`: Gestisce l'interfaccia di login
-- `MessagesWidget`: Finestra principale per visualizzare i messaggi
-- `ContactsDialog`: Dialog per la gestione dei contatti
-- `ChatsDialog`: Dialog per la visualizzazione delle chat
-- `ImageDialog`: Dialog per la visualizzazione delle immagini
+### Classi Principali
 
-### Classi Core
-- `MessageListener`: Thread per l'ascolto dei messaggi Telegram
-- `MainApp`: Classe principale dell'applicazione
+#### Autenticazione e Setup
+- **`LoginWidget`**: Gestisce l'interfaccia di login e il salvataggio delle credenziali
+- **`MainApp`**: Classe principale che coordina l'intera applicazione
+
+#### Core Telegram
+- **`MessageListener`**: Thread dedicato per l'ascolto dei messaggi in tempo reale
+  - Gestisce la connessione con l'API Telegram
+  - Salva automaticamente messaggi, contatti e immagini
+  - Emette segnali per aggiornare l'interfaccia
+
+#### Interfaccia Utente
+- **`MessagesWidget`**: Finestra principale per visualizzare i messaggi
+  - Lista dei messaggi in tempo reale
+  - Pulsanti per accedere a contatti, chat e cronologia
+  - Funzionalità di pulizia dati
+
+#### Dialog e Finestre Secondarie
+- **`ContactsDialog`**: Visualizzazione e gestione dei contatti salvati
+- **`ChatsDialog`**: Lista delle chat con messaggi ricevuti
+- **`MessagesOfChatDialog`**: Cronologia messaggi per una chat specifica
+- **`ImageDialog`**: Visualizzatore per le immagini ricevute
+
+### Caratteristiche del Codice
+
+- ✅ **Completamente documentato**: Ogni classe e metodo ha docstrings dettagliate in italiano
+- ✅ **Commenti esplicativi**: Logica complessa spiegata con commenti inline
+- ✅ **Gestione errori**: Try-catch appropriati per operazioni I/O e rete
+- ✅ **Modularità**: Separazione chiara delle responsabilità tra classi
+- ✅ **Thread safety**: Gestione corretta dei thread per operazioni asincrone
 
 ## Contribuire
 
