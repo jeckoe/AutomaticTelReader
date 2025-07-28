@@ -1,11 +1,15 @@
 import sys
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QListWidget, QLineEdit, QMessageBox
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QListWidget, QLineEdit, QMessageBox, QHBoxLayout, QDialog, QTextEdit, QInputDialog, QDialogButtonBox, QListView, QAbstractItemView, QListWidgetItem
+from PySide6.QtCore import QThread, Signal, Qt
 from telethon import TelegramClient, events
 import os
 import json
 import datetime
 from telethon.tl.types import User, Channel, Chat
+from PySide6.QtGui import QIcon, QFont, QPixmap, QImage
+import base64
+import uuid
+IMAGES_FILE = 'images.json'
 
 API_ID = ''
 API_HASH = ''
@@ -81,15 +85,30 @@ class MessageListener(QThread):
             sender = await event.get_sender()
             now = datetime.datetime.utcnow().isoformat()
             sender_info = self.extract_sender_info(sender)
+            # Salva info gruppo se presente
+            chat_info = None
+            if hasattr(event, 'chat') and event.chat:
+                chat_info = self.extract_sender_info(event.chat)
+            image_id = None
+            if hasattr(event.message, 'photo') and event.message.photo:
+                # Scarica la foto in memoria e codifica in base64
+                img_bytes = await self.client.download_media(event.message.photo, file=bytes)
+                if img_bytes:
+                    image_id = str(uuid.uuid4())
+                    self.save_image(image_id, img_bytes, now, sender_info, chat_info)
             msg = {
                 'from_id': str(event.sender_id),
                 'text': event.raw_text,
                 'date': str(event.date),
                 'received_at': now,
-                'sender': sender_info
+                'sender': sender_info,
+                'chat': chat_info if chat_info else None,
+                'image_id': image_id
             }
             self.save_message(msg)
             self.save_contact(sender_info)
+            if chat_info:
+                self.save_contact(chat_info)
             self.new_message.emit(msg)
         await self.client.run_until_disconnected()
 
@@ -148,34 +167,293 @@ class MessageListener(QThread):
         with open(CONTACTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(contacts, f, ensure_ascii=False, indent=2)
 
-class MessagesWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle('Messaggi Telegram')
+    def save_image(self, image_id, img_bytes, date, sender_info, chat_info):
+        images = {}
+        if os.path.exists(IMAGES_FILE):
+            try:
+                with open(IMAGES_FILE, 'r', encoding='utf-8') as f:
+                    images = json.load(f)
+            except Exception:
+                images = {}
+        images[image_id] = {
+            'base64': base64.b64encode(img_bytes).decode('utf-8'),
+            'date': date,
+            'sender': sender_info,
+            'chat': chat_info
+        }
+        with open(IMAGES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(images, f, ensure_ascii=False, indent=2)
+
+class ContactsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Contatti Telegram')
+        self.setMinimumWidth(400)
         layout = QVBoxLayout()
         self.list_widget = QListWidget()
-        layout.addWidget(QLabel('Messaggi ricevuti:'))
+        self.list_widget.setFont(QFont('Segoe UI', 10))
+        layout.addWidget(QLabel('Contatti salvati:'))
         layout.addWidget(self.list_widget)
         self.setLayout(layout)
-        self.session_start_time = None
+        self.load_contacts()
+        self.list_widget.itemClicked.connect(self.show_contact_details)
+        self.details = QTextEdit()
+        self.details.setReadOnly(True)
+        self.details.setFont(QFont('Consolas', 9))
+        layout.addWidget(QLabel('Dettagli contatto:'))
+        layout.addWidget(self.details)
+        close_btn = QPushButton('Chiudi')
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
 
-    def set_session_start_time(self, start_time):
-        self.session_start_time = start_time
+    def load_contacts(self):
+        self.list_widget.clear()
+        if os.path.exists(CONTACTS_FILE):
+            try:
+                with open(CONTACTS_FILE, 'r', encoding='utf-8') as f:
+                    contacts = json.load(f)
+                for cid, info in contacts.items():
+                    display = f"[{info.get('type', 'unknown')}] {info.get('title', info.get('first_name', ''))} ({cid})"
+                    self.list_widget.addItem(display)
+            except Exception:
+                pass
 
-    def load_messages(self):
+    def show_contact_details(self, item):
+        text = item.text()
+        cid = text.split('(')[-1].rstrip(')')
+        if os.path.exists(CONTACTS_FILE):
+            with open(CONTACTS_FILE, 'r', encoding='utf-8') as f:
+                contacts = json.load(f)
+            info = contacts.get(cid, {})
+            self.details.setText(json.dumps(info, indent=2, ensure_ascii=False))
+
+class ImageDialog(QDialog):
+    def __init__(self, image_base64, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Immagine del messaggio')
+        layout = QVBoxLayout()
+        img_bytes = base64.b64decode(image_base64)
+        image = QImage.fromData(img_bytes)
+        pixmap = QPixmap.fromImage(image)
+        label = QLabel()
+        label.setPixmap(pixmap.scaled(400, 400, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        layout.addWidget(label)
+        close_btn = QPushButton('Chiudi')
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+        self.setLayout(layout)
+
+class MessagesOfChatDialog(QDialog):
+    def __init__(self, chat_id, chat_title, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Messaggi di {chat_title}")
+        self.setMinimumWidth(500)
+        layout = QVBoxLayout()
+        self.list_widget = QListWidget()
+        layout.addWidget(QLabel(f"Messaggi ricevuti da: {chat_title}"))
+        layout.addWidget(self.list_widget)
+        self.setLayout(layout)
+        self.load_messages(chat_id)
+        self.list_widget.itemClicked.connect(self.show_image_if_any)
+        self.image_dialog = None
+
+    def load_messages(self, chat_id):
         self.list_widget.clear()
         if os.path.exists(MESSAGES_FILE):
             with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
                 messages = json.load(f)
             for msg in messages:
-                # Mostra solo i messaggi ricevuti dopo l'avvio del watcher
+                chat = msg.get('chat') or msg.get('sender')
+                if not chat or chat.get('id') != chat_id:
+                    continue
+                text = msg.get('text', '')
+                date = msg.get('date', '')
+                image_id = msg.get('image_id')
+                display = f"[{date}] {text}"
+                item = QListWidgetItem(display)
+                if image_id:
+                    item.setToolTip('Clicca per vedere l\'immagine')
+                    item.setData(Qt.UserRole, image_id)
+                else:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+                self.list_widget.addItem(item)
+
+    def show_image_if_any(self, item):
+        image_id = item.data(Qt.UserRole)
+        if image_id:
+            image_b64 = self.load_image_base64(image_id)
+            if image_b64:
+                self.image_dialog = ImageDialog(image_b64, self)
+                self.image_dialog.exec()
+                self.image_dialog = None
+
+    def load_image_base64(self, image_id):
+        if os.path.exists(IMAGES_FILE):
+            with open(IMAGES_FILE, 'r', encoding='utf-8') as f:
+                images = json.load(f)
+            img = images.get(image_id)
+            if img:
+                return img.get('base64')
+        return None
+
+class ChatsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Chat salvate')
+        self.setMinimumWidth(400)
+        layout = QVBoxLayout()
+        self.list_widget = QListWidget()
+        self.list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(QLabel('Chat da cui sono stati ricevuti messaggi:'))
+        layout.addWidget(self.list_widget)
+        self.setLayout(layout)
+        self.load_chats()
+        self.list_widget.itemClicked.connect(self.show_messages_of_chat)
+
+    def load_chats(self):
+        self.list_widget.clear()
+        if os.path.exists(MESSAGES_FILE):
+            with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
+                messages = json.load(f)
+            chats = {}
+            for msg in messages:
+                chat = msg.get('chat') or msg.get('sender')
+                if not chat:
+                    continue
+                chat_id = chat.get('id')
+                chat_title = chat.get('title') or chat.get('first_name') or chat.get('username') or chat_id
+                if chat_id not in chats:
+                    chats[chat_id] = {'title': chat_title}
+            for cid, info in chats.items():
+                item = QListWidgetItem(f"{info['title']}")
+                item.setData(Qt.UserRole, cid)
+                self.list_widget.addItem(item)
+
+    def show_messages_of_chat(self, item):
+        chat_id = item.data(Qt.UserRole)
+        chat_title = item.text()
+        dialog = MessagesOfChatDialog(chat_id, chat_title, self)
+        dialog.exec()
+
+class MessagesWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Messaggi Telegram')
+        self.setMinimumWidth(420)
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout = QVBoxLayout()
+        self.contacts_btn = QPushButton('Contatti')
+        self.contacts_btn.setIcon(QIcon.fromTheme('user-group'))
+        self.contacts_btn.setMinimumHeight(40)
+        self.contacts_btn.setFont(QFont('Segoe UI', 10, QFont.Bold))
+        self.contacts_btn.clicked.connect(self.open_contacts)
+        self.chats_btn = QPushButton('Chat')
+        self.chats_btn.setIcon(QIcon.fromTheme('chat'))
+        self.chats_btn.setMinimumHeight(40)
+        self.chats_btn.setFont(QFont('Segoe UI', 10, QFont.Bold))
+        self.chats_btn.clicked.connect(self.open_chats)
+        self.clear_btn = QPushButton('Elimina Cronologia')
+        self.clear_btn.setIcon(QIcon.fromTheme('edit-delete'))
+        self.clear_btn.setMinimumHeight(40)
+        self.clear_btn.setFont(QFont('Segoe UI', 10, QFont.Bold))
+        self.clear_btn.clicked.connect(self.clear_history)
+        left_layout.addWidget(self.contacts_btn)
+        left_layout.addWidget(self.chats_btn)
+        left_layout.addWidget(self.clear_btn)
+        left_layout.addStretch()
+        main_layout.addLayout(left_layout)
+        right_layout = QVBoxLayout()
+        title = QLabel('Messaggi ricevuti:')
+        title.setFont(QFont('Segoe UI', 11, QFont.Bold))
+        right_layout.addWidget(title)
+        self.list_widget = QListWidget()
+        self.list_widget.setFont(QFont('Segoe UI', 10))
+        self.list_widget.setStyleSheet('QListWidget { background: #222; color: #eee; border-radius: 8px; padding: 8px; }')
+        right_layout.addWidget(self.list_widget)
+        self.placeholder = QLabel('Nessun messaggio ricevuto in questa sessione.')
+        font_placeholder = QFont('Segoe UI', 9)
+        font_placeholder.setItalic(True)
+        self.placeholder.setFont(font_placeholder)
+        self.placeholder.setStyleSheet('color: #888;')
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        right_layout.addWidget(self.placeholder)
+        self.placeholder.hide()
+        main_layout.addLayout(right_layout)
+        self.setLayout(main_layout)
+        self.session_start_time = None
+        self.contacts_dialog = None
+        self.update_placeholder()
+
+    def set_session_start_time(self, start_time):
+        self.session_start_time = start_time
+        self.load_messages()
+
+    def get_display_name(self, msg):
+        sender = msg.get('sender', {})
+        chat = msg.get('chat', {})
+        # Preferisci il nome del gruppo/canale se presente
+        if chat and chat.get('title'):
+            return chat.get('title')
+        # Altrimenti, se utente
+        if sender.get('first_name') or sender.get('last_name'):
+            return f"{sender.get('first_name', '')} {sender.get('last_name', '')}".strip()
+        if sender.get('username'):
+            return sender.get('username')
+        if sender.get('title'):
+            return sender.get('title')
+        # Fallback: ID
+        return sender.get('id', msg.get('from_id', ''))
+
+    def load_messages(self):
+        self.list_widget.clear()
+        count = 0
+        if os.path.exists(MESSAGES_FILE):
+            with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
+                messages = json.load(f)
+            for msg in messages:
                 if self.session_start_time and msg.get('received_at') and msg['received_at'] >= self.session_start_time:
-                    self.list_widget.addItem(f"Da {msg['from_id']}: {msg['text']}")
+                    display_name = self.get_display_name(msg)
+                    self.list_widget.addItem(f"Da {display_name}: {msg['text']}")
+                    count += 1
+        self.update_placeholder(count)
 
     def add_message(self, msg):
-        # Mostra solo i messaggi ricevuti dopo l'avvio del watcher
         if self.session_start_time and msg.get('received_at') and msg['received_at'] >= self.session_start_time:
-            self.list_widget.addItem(f"Da {msg['from_id']}: {msg['text']}")
+            display_name = self.get_display_name(msg)
+            self.list_widget.addItem(f"Da {display_name}: {msg['text']}")
+        self.update_placeholder()
+
+    def update_placeholder(self, count=None):
+        if count is None:
+            count = self.list_widget.count()
+        self.placeholder.setVisible(count == 0)
+
+    def open_contacts(self):
+        if self.contacts_dialog is None:
+            self.contacts_dialog = ContactsDialog(self)
+        self.contacts_dialog.load_contacts()
+        self.contacts_dialog.details.clear()
+        self.contacts_dialog.exec()
+        self.contacts_dialog = None
+
+    def open_chats(self):
+        dialog = ChatsDialog(self)
+        dialog.exec()
+
+    def clear_history(self):
+        reply = QMessageBox.question(self, 'Conferma eliminazione',
+            'Sei sicuro di voler eliminare tutta la cronologia dei messaggi e delle immagini? L\'operazione è irreversibile.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            for f in [MESSAGES_FILE, IMAGES_FILE]:
+                try:
+                    with open(f, 'w', encoding='utf-8') as file:
+                        json.dump([] if f == MESSAGES_FILE else {}, file)
+                except Exception:
+                    pass
+            self.load_messages()
+            QMessageBox.information(self, 'Cronologia eliminata', 'Tutta la cronologia è stata eliminata con successo.')
 
 class MainApp(QApplication):
     def __init__(self, argv):
@@ -183,7 +461,7 @@ class MainApp(QApplication):
         self.login_widget = LoginWidget(self.on_login)
         self.messages_widget = MessagesWidget()
         self.listener_thread = None
-        # Carica credenziali se esistono
+        self._should_quit = False
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
@@ -206,7 +484,16 @@ class MainApp(QApplication):
         self.listener_thread = MessageListener(api_id, api_hash, phone)
         self.messages_widget.set_session_start_time(self.listener_thread.start_time)
         self.listener_thread.new_message.connect(self.messages_widget.add_message)
+        self.messages_widget.closeEvent = self.on_main_window_close
         self.listener_thread.start()
+
+    def on_main_window_close(self, event):
+        if self.listener_thread and self.listener_thread.isRunning():
+            self.listener_thread.requestInterruption()
+            self.listener_thread.quit()
+            self.listener_thread.wait(3000)
+        event.accept()
+        self.quit()
 
 if __name__ == '__main__':
     app = MainApp(sys.argv)

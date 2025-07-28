@@ -20,5 +20,30 @@
     "is_verified": false,
     "is_scam": false,
     "is_gigagroup": false
+  },
+  "4919354651": {
+    "id": "4919354651",
+    "type": "group",
+    "title": "Testgruppo",
+    "username": "",
+    "is_megagroup": false
+  },
+  "1238009951": {
+    "id": "1238009951",
+    "type": "channel",
+    "title": "ScontiShark | Offerte e Codici Sconto",
+    "username": null,
+    "is_verified": false,
+    "is_scam": false,
+    "is_gigagroup": false
+  },
+  "1332327152": {
+    "id": "1332327152",
+    "type": "channel",
+    "title": "forex fibonacci chart",
+    "username": "FxFiboChart",
+    "is_verified": false,
+    "is_scam": false,
+    "is_gigagroup": false
   }
 }
