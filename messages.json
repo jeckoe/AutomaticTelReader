@@ -21,5 +21,176 @@
       "is_megagroup": false
     },
     "image_id": "4619edfb-6b41-4663-a81a-9e4a1c5bbd5b"
+  },
+  {
+    "from_id": "681071592",
+    "text": "Aa",
+    "date": "2025-07-29 13:28:22+00:00",
+    "received_at": "2025-07-29T13:28:22.999815",
+    "sender": {
+      "id": "681071592",
+      "type": "user",
+      "first_name": "Andrea",
+      "last_name": "Vian",
+      "username": "vian_andrea00",
+      "phone": "393515834441",
+      "is_self": true
+    },
+    "chat": {
+      "id": "4919354651",
+      "type": "group",
+      "title": "Testgruppo",
+      "username": "",
+      "is_megagroup": false
+    },
+    "image_id": null
+  },
+  {
+    "from_id": "681071592",
+    "text": "Aaa",
+    "date": "2025-07-29 13:32:57+00:00",
+    "received_at": "2025-07-29T13:32:57.083469",
+    "sender": {
+      "id": "681071592",
+      "type": "user",
+      "first_name": "Andrea",
+      "last_name": "Vian",
+      "username": "vian_andrea00",
+      "phone": "393515834441",
+      "is_self": true
+    },
+    "chat": {
+      "id": "4919354651",
+      "type": "group",
+      "title": "Testgruppo",
+      "username": "",
+      "is_megagroup": false
+    },
+    "image_id": null
+  },
+  {
+    "from_id": "-1001238009951",
+    "text": "🏆✨ BEST SELLER\nadidas Starlancer Club Ball, Calcio Unisex Adulto\n\n💶 11,99€ anzichè 18,00€\n\n🔗 https://amzn.to/44S3NHr\n👉🏻 Apri nell’app Amazon - #aff",
+    "date": "2025-07-29 13:29:21+00:00",
+    "received_at": "2025-07-29T13:49:47.115335",
+    "sender": {
+      "id": "1238009951",
+      "type": "channel",
+      "title": "ScontiShark | Offerte e Codici Sconto",
+      "username": null,
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "chat": {
+      "id": "1238009951",
+      "type": "channel",
+      "title": "ScontiShark | Offerte e Codici Sconto",
+      "username": null,
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "image_id": "b6aa0eaa-f0ad-4aec-bb8d-a7d0233b9495"
+  },
+  {
+    "from_id": "-1001340573360",
+    "text": "Just woke up to see how GoldFusion AI did during the night!\n\nJust install it on Metatrader and see how your account grows automatically!\n\nGet it here: https://gum.new/gum/cmdg2q0dj001x04l88xc246t2",
+    "date": "2025-07-29 13:56:01+00:00",
+    "received_at": "2025-07-29T14:04:47.143075",
+    "sender": {
+      "id": "1340573360",
+      "type": "channel",
+      "title": "VIPERFX Premium Channel",
+      "username": "viperpremiu",
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "chat": {
+      "id": "1340573360",
+      "type": "channel",
+      "title": "VIPERFX Premium Channel",
+      "username": "viperpremiu",
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "image_id": null
+  },
+  {
+    "from_id": "-1001284268486",
+    "text": "🥇GOLD COPY TRADING:\nDirectly copy our trades on your account! \nt.me/+yf6Qtimi3K4yM2Q0\nt.me/+yf6Qtimi3K4yM2Q0",
+    "date": "2025-07-29 13:56:15+00:00",
+    "received_at": "2025-07-29T14:04:47.147291",
+    "sender": {
+      "id": "1284268486",
+      "type": "channel",
+      "title": "Easy Forex 👑 OFFICIAL CHANNEL",
+      "username": "EasyForexPips",
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "chat": {
+      "id": "1284268486",
+      "type": "channel",
+      "title": "Easy Forex 👑 OFFICIAL CHANNEL",
+      "username": "EasyForexPips",
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "image_id": null
+  },
+  {
+    "from_id": "-1001284268486",
+    "text": "USDCAD Take profit 1 ✅💯\n\n+20 PIPS 🔥\n\n⭐️⭐️⭐️Become a VIP member =>\nhttps://easyforexpips.com\nPremium➡️ t.me/EFPsignals",
+    "date": "2025-07-29 13:56:07+00:00",
+    "received_at": "2025-07-29T14:04:47.146240",
+    "sender": {
+      "id": "1284268486",
+      "type": "channel",
+      "title": "Easy Forex 👑 OFFICIAL CHANNEL",
+      "username": "EasyForexPips",
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "chat": {
+      "id": "1284268486",
+      "type": "channel",
+      "title": "Easy Forex 👑 OFFICIAL CHANNEL",
+      "username": "EasyForexPips",
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "image_id": "3849b9ce-fad8-416b-a1f6-8b8fc454a24d"
+  },
+  {
+    "from_id": "-1001238009951",
+    "text": "📦🔋 SCORTA PILE\nBONAI Longlife Batterie alcaline AAA (24 pezzi)\n\n💶 6,86€ anzichè 10,46€\n\n🔗 https://amzn.to/41zLfcb\n👉🏻 Apri nell’app Amazon - #aff",
+    "date": "2025-07-29 13:57:25+00:00",
+    "received_at": "2025-07-29T14:04:47.151322",
+    "sender": {
+      "id": "1238009951",
+      "type": "channel",
+      "title": "ScontiShark | Offerte e Codici Sconto",
+      "username": null,
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "chat": {
+      "id": "1238009951",
+      "type": "channel",
+      "title": "ScontiShark | Offerte e Codici Sconto",
+      "username": null,
+      "is_verified": false,
+      "is_scam": false,
+      "is_gigagroup": false
+    },
+    "image_id": "5f9eea17-1a4d-4380-99da-8c8cd82dd02e"
   }
 ]
