@@ -3,9 +3,9 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QLabel, QPush
                                QLineEdit, QMessageBox, QHBoxLayout, QDialog, QTextEdit, QInputDialog, 
                                QDialogButtonBox, QListView, QAbstractItemView, QListWidgetItem, 
                                QProgressBar, QSplashScreen, QFrame, QScrollArea, QGroupBox, 
-                               QSpacerItem, QSizePolicy, QCheckBox, QComboBox, QSpinBox)
+                               QSpacerItem, QSizePolicy, QCheckBox, QComboBox, QSpinBox, QSlider)
 from PySide6.QtCore import QThread, Signal, Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QSize
-from PySide6.QtGui import QIcon, QFont, QPixmap, QImage, QPalette, QColor, QPainter, QBrush
+from PySide6.QtGui import QIcon, QFont, QPixmap, QImage, QPalette, QColor, QPainter, QBrush, QWheelEvent
 from telethon import TelegramClient, events
 import os
 import json
@@ -16,6 +16,11 @@ import uuid
 import yfinance as yf
 import requests
 from datetime import datetime as dt
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import matplotlib.dates as mdates
+import numpy as np
 IMAGES_FILE = 'images.json'
 
 API_ID = ''
@@ -134,20 +139,20 @@ class LoginWidget(QWidget):
         cred_layout.setSpacing(12)
         
         # Label descrittivo
-        info_label = QLabel("💡 Ottieni le credenziali da my.telegram.org/apps")
+        info_label = QLabel("💡 Ottieni le credenziali gratuite da my.telegram.org/apps (guida sotto)")
         info_label.setStyleSheet("font-size: 11px; color: #aaaaaa; font-style: italic; margin-bottom: 8px;")
         cred_layout.addWidget(info_label)
         
         self.api_id_input = QLineEdit()
-        self.api_id_input.setPlaceholderText('API ID (numero, es: 123456)')
+        self.api_id_input.setPlaceholderText('API ID (solo numeri, es: 1234567)')
         cred_layout.addWidget(self.api_id_input)
         
         self.api_hash_input = QLineEdit()
-        self.api_hash_input.setPlaceholderText('API Hash (es: abcd1234efgh5678...)')
+        self.api_hash_input.setPlaceholderText('API Hash (stringa alfanumerica, es: 1a2b3c4d5e6f...)')
         cred_layout.addWidget(self.api_hash_input)
         
         self.phone_input = QLineEdit()
-        self.phone_input.setPlaceholderText('Numero di telefono (es: +39123456789)')
+        self.phone_input.setPlaceholderText('Numero Telegram con prefisso (es: +39123456789)')
         cred_layout.addWidget(self.phone_input)
         
         cred_group.setLayout(cred_layout)
@@ -227,7 +232,16 @@ class LoginWidget(QWidget):
         <div style="font-family: 'Segoe UI'; color: #ffffff; line-height: 1.4; background-color: #2b2b2b;">
         <h2 style="color: #4da6ff; margin-bottom: 15px;">🔑 Come ottenere API ID e API Hash</h2>
         
-        <p style="margin-bottom: 12px; color: #ffffff;"><strong>Per utilizzare AutomaticTelReader, hai bisogno delle credenziali API di Telegram:</strong></p>
+        <p style="margin-bottom: 12px; color: #ffffff;"><strong>Le credenziali API di Telegram sono GRATUITE e necessarie per utilizzare AutomaticTelReader:</strong></p>
+        
+        <div style="background: #2a4a2a; border: 1px solid #4a6a4a; border-radius: 6px; padding: 12px; margin-bottom: 15px;">
+        <p style="margin: 0; color: #90ff90;"><strong>📋 Cosa sono:</strong></p>
+        <ul style="margin: 8px 0 0 20px; color: #cccccc;">
+        <li><strong>API ID:</strong> Un numero identificativo (es: 1234567)</li>
+        <li><strong>API Hash:</strong> Una stringa alfanumerica (es: 1a2b3c4d5e6f...)</li>
+        <li><strong>Numero:</strong> Il tuo numero di telefono Telegram con prefisso internazionale</li>
+        </ul>
+        </div>
         
         <ol style="margin-left: 20px; margin-bottom: 15px; color: #ffffff;">
         <li style="margin-bottom: 8px;"><strong>Vai su</strong> <a href="https://my.telegram.org" style="color: #4da6ff;">my.telegram.org</a></li>
@@ -240,11 +254,11 @@ class LoginWidget(QWidget):
             <li><strong>Platform:</strong> Desktop</li>
             </ul>
         </li>
-        <li style="margin-bottom: 8px;"><strong>Copia</strong> <span style="background: #404040; color: #4da6ff; padding: 2px 6px; border-radius: 3px;">API ID</span> e <span style="background: #404040; color: #4da6ff; padding: 2px 6px; border-radius: 3px;">API Hash</span> nei campi sopra</li>
+        <li style="margin-bottom: 8px;"><strong>Copia</strong> <span style="background: #404040; color: #4da6ff; padding: 2px 6px; border-radius: 3px;">API ID</span> e <span style="background: #404040; color: #4da6ff; padding: 2px 6px; border-radius: 3px;">API Hash</span> nei campi dell'app</li>
         </ol>
         
         <div style="background: #4a4a00; border: 1px solid #666600; border-radius: 6px; padding: 12px; margin-top: 15px;">
-        <p style="margin: 0; color: #ffeb3b;"><strong>⚠️ Importante:</strong> Queste credenziali sono personali e sicure. Non condividerle mai con nessuno!</p>
+        <p style="margin: 0; color: #ffeb3b;"><strong>⚠️ Importante:</strong> Queste credenziali sono personali e gratuite. Non condividerle mai con nessuno!</p>
         </div>
         </div>
         """
@@ -279,16 +293,36 @@ class LoginWidget(QWidget):
         msg.exec()
 
     def load_saved_credentials(self):
+        """Carica le credenziali salvate se esistono"""
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.api_id_input.setText(str(data.get('api_id', '')))
-                self.api_hash_input.setText(data.get('api_hash', ''))
-                self.phone_input.setText(data.get('phone', ''))
-                self.save_creds_checkbox.setChecked(data.get('save_credentials', True))
-            except Exception:
-                pass
+                    content = f.read().strip()
+                    if content:  # Verifica che il file non sia vuoto
+                        data = json.loads(content)
+                        # Carica i dati nei campi se esistono
+                        if 'api_id' in data and data['api_id']:
+                            self.api_id_input.setText(str(data['api_id']))
+                        if 'api_hash' in data and data['api_hash']:
+                            self.api_hash_input.setText(data['api_hash'])
+                        if 'phone' in data and data['phone']:
+                            self.phone_input.setText(data['phone'])
+                        
+                        self.save_creds_checkbox.setChecked(data.get('save_credentials', True))
+                        
+                        # Assicurati che i campi siano sempre editabili
+                        self.api_id_input.setReadOnly(False)
+                        self.api_hash_input.setReadOnly(False)
+                        self.phone_input.setReadOnly(False)
+                        
+            except (json.JSONDecodeError, Exception) as e:
+                # Se c'è un errore nel file, ricrea il file vuoto
+                print(f"Errore nel caricamento config: {e}")
+                try:
+                    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                        json.dump({}, f)
+                except:
+                    pass
 
     def try_login(self):
         api_id = self.api_id_input.text().strip()
@@ -339,42 +373,53 @@ class MessageListener(QThread):
 
     def run(self):
         import asyncio
-        asyncio.run(self._main())
+        try:
+            asyncio.run(self._main())
+        except Exception as e:
+            print(f"Errore in MessageListener.run(): {e}")
+            raise
 
     async def _main(self):
-        self.client = TelegramClient(SESSION_FILE, self.api_id, self.api_hash)
-        await self.client.start(phone=self.phone)
-        @self.client.on(events.NewMessage)
-        async def handler(event):
-            sender = await event.get_sender()
-            now = datetime.datetime.utcnow().isoformat()
-            sender_info = self.extract_sender_info(sender)
-            # Salva info gruppo se presente
-            chat_info = None
-            if hasattr(event, 'chat') and event.chat:
-                chat_info = self.extract_sender_info(event.chat)
-            image_id = None
-            if hasattr(event.message, 'photo') and event.message.photo:
-                # Scarica la foto in memoria e codifica in base64
-                img_bytes = await self.client.download_media(event.message.photo, file=bytes)
-                if img_bytes:
-                    image_id = str(uuid.uuid4())
-                    self.save_image(image_id, img_bytes, now, sender_info, chat_info)
-            msg = {
-                'from_id': str(event.sender_id),
-                'text': event.raw_text,
-                'date': str(event.date),
-                'received_at': now,
-                'sender': sender_info,
-                'chat': chat_info if chat_info else None,
-                'image_id': image_id
-            }
-            self.save_message(msg)
-            self.save_contact(sender_info)
-            if chat_info:
-                self.save_contact(chat_info)
-            self.new_message.emit(msg)
-        await self.client.run_until_disconnected()
+        try:
+            self.client = TelegramClient(SESSION_FILE, self.api_id, self.api_hash)
+            await self.client.start(phone=self.phone)
+            
+            @self.client.on(events.NewMessage)
+            async def handler(event):
+                sender = await event.get_sender()
+                now = datetime.datetime.utcnow().isoformat()
+                sender_info = self.extract_sender_info(sender)
+                # Salva info gruppo se presente
+                chat_info = None
+                if hasattr(event, 'chat') and event.chat:
+                    chat_info = self.extract_sender_info(event.chat)
+                image_id = None
+                if hasattr(event.message, 'photo') and event.message.photo:
+                    # Scarica la foto in memoria e codifica in base64
+                    img_bytes = await self.client.download_media(event.message.photo, file=bytes)
+                    if img_bytes:
+                        image_id = str(uuid.uuid4())
+                        self.save_image(image_id, img_bytes, now, sender_info, chat_info)
+                msg = {
+                    'from_id': str(event.sender_id),
+                    'text': event.raw_text,
+                    'date': str(event.date),
+                    'received_at': now,
+                    'sender': sender_info,
+                    'chat': chat_info if chat_info else None,
+                    'image_id': image_id
+                }
+                self.save_message(msg)
+                self.save_contact(sender_info)
+                if chat_info:
+                    self.save_contact(chat_info)
+                self.new_message.emit(msg)
+            
+            await self.client.run_until_disconnected()
+            
+        except Exception as e:
+            print(f"Errore in _main(): {e}")
+            raise
 
     def extract_sender_info(self, sender):
         if sender is None:
@@ -1221,6 +1266,7 @@ class TradingDialog(QDialog):
         self.setWindowTitle('📈 Trading Forex - Dati Reali')
         self.setMinimumSize(900, 700)
         self.forex_data = {}
+        self.selected_symbol = None  # Coppia attualmente selezionata
         self.setup_ui()
         self.load_real_forex_data()
 
@@ -1394,6 +1440,11 @@ class TradingDialog(QDialog):
         self.refresh_btn.clicked.connect(self.refresh_data)
         actions_layout.addWidget(self.refresh_btn)
         
+        self.chart_btn = QPushButton('📊 Grafico')
+        self.chart_btn.clicked.connect(self.open_chart)
+        self.chart_btn.setEnabled(False)  # Abilitato solo quando si seleziona una coppia
+        actions_layout.addWidget(self.chart_btn)
+        
         actions_layout.addStretch()
         
         close_btn = QPushButton('✅ Chiudi')
@@ -1502,6 +1553,9 @@ class TradingDialog(QDialog):
         """Gestisce la selezione di una coppia forex"""
         symbol = item.data(Qt.UserRole)
         if symbol and symbol in self.forex_data:
+            self.selected_symbol = symbol  # Memorizza la coppia selezionata
+            self.chart_btn.setEnabled(True)  # Abilita il pulsante grafico
+            
             data = self.forex_data[symbol]
             
             # Aggiorna il titolo
@@ -1543,6 +1597,13 @@ class TradingDialog(QDialog):
             range_52w = data['high_52w'] - data['low_52w']
             self.range_52w_label.setText(f"Range 52w: {range_52w:.4f}")
 
+    def open_chart(self):
+        """Apre la finestra del grafico per la coppia selezionata"""
+        if self.selected_symbol and self.selected_symbol in self.forex_data:
+            data = self.forex_data[self.selected_symbol]
+            chart_dialog = ChartDialog(self.selected_symbol, data['pair'], data['name'])
+            chart_dialog.show()  # show() invece di exec() per finestra indipendente
+
     def refresh_data(self):
         """Aggiorna i dati forex"""
         self.refresh_btn.setEnabled(False)
@@ -1563,6 +1624,353 @@ class TradingDialog(QDialog):
         finally:
             self.refresh_btn.setEnabled(True)
             self.refresh_btn.setText('🔄 Aggiorna Dati')
+
+class ChartDialog(QDialog):
+    def __init__(self, symbol, pair_name, full_name, parent=None):
+        super().__init__(parent)
+        self.symbol = symbol
+        self.pair_name = pair_name
+        self.full_name = full_name
+        self.current_period = '1mo'  # Periodo iniziale
+        self.periods = {
+            '1d': '1 Giorno',
+            '5d': '5 Giorni', 
+            '1mo': '1 Mese',
+            '3mo': '3 Mesi',
+            '6mo': '6 Mesi',
+            '1y': '1 Anno',
+            '2y': '2 Anni',
+            '5y': '5 Anni'
+        }
+        self.setup_ui()
+        self.load_chart_data()
+
+    def setup_ui(self):
+        self.setWindowTitle(f'📈 Grafico {self.pair_name} - {self.full_name}')
+        self.setMinimumSize(1000, 700)
+        self.resize(1200, 800)
+        
+        # Imposta il tema scuro per matplotlib
+        plt.style.use('dark_background')
+        
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+                margin: 2px;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+            QPushButton:pressed {
+                background-color: #005a9e;
+            }
+            QPushButton:checked {
+                background-color: #28a745;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 12px;
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid #555555;
+                height: 8px;
+                background: #333333;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #0078d4;
+                border: 1px solid #0078d4;
+                width: 18px;
+                border-radius: 9px;
+                margin: -5px 0;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #106ebe;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+        
+        # Header con controlli
+        header_layout = QHBoxLayout()
+        
+        # Titolo
+        title_label = QLabel(f'📊 {self.pair_name} - Grafico Interattivo')
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #4da6ff;")
+        header_layout.addWidget(title_label)
+        
+        header_layout.addStretch()
+        
+        # Pulsanti per timeframe
+        timeframe_label = QLabel('Timeframe:')
+        header_layout.addWidget(timeframe_label)
+        
+        self.period_buttons = {}
+        for period_key, period_name in self.periods.items():
+            btn = QPushButton(period_name)
+            btn.setCheckable(True)
+            btn.setFixedWidth(80)
+            if period_key == self.current_period:
+                btn.setChecked(True)
+            btn.clicked.connect(lambda checked, p=period_key: self.change_period(p))
+            self.period_buttons[period_key] = btn
+            header_layout.addWidget(btn)
+        
+        layout.addLayout(header_layout)
+        
+        # Area del grafico
+        self.figure = Figure(figsize=(12, 8), facecolor='#2b2b2b')
+        self.canvas = FigureCanvas(self.figure)
+        self.canvas.setStyleSheet("background-color: #2b2b2b;")
+        
+        # Abilita zoom con scroll del mouse
+        self.canvas.mpl_connect('scroll_event', self.on_scroll)
+        
+        layout.addWidget(self.canvas)
+        
+        # Controlli zoom
+        zoom_layout = QHBoxLayout()
+        
+        zoom_out_btn = QPushButton('🔍- Zoom Out')
+        zoom_out_btn.clicked.connect(self.zoom_out)
+        zoom_layout.addWidget(zoom_out_btn)
+        
+        # Slider per zoom
+        zoom_layout.addWidget(QLabel('Zoom:'))
+        self.zoom_slider = QSlider(Qt.Horizontal)
+        self.zoom_slider.setRange(10, 500)  # Da 10% a 500%
+        self.zoom_slider.setValue(100)
+        self.zoom_slider.valueChanged.connect(self.on_zoom_slider)
+        zoom_layout.addWidget(self.zoom_slider)
+        
+        self.zoom_label = QLabel('100%')
+        self.zoom_label.setFixedWidth(50)
+        zoom_layout.addWidget(self.zoom_label)
+        
+        zoom_in_btn = QPushButton('🔍+ Zoom In')
+        zoom_in_btn.clicked.connect(self.zoom_in)
+        zoom_layout.addWidget(zoom_in_btn)
+        
+        zoom_layout.addStretch()
+        
+        # Pulsante aggiorna
+        refresh_btn = QPushButton('🔄 Aggiorna Dati')
+        refresh_btn.clicked.connect(self.refresh_chart)
+        zoom_layout.addWidget(refresh_btn)
+        
+        # Pulsante reset zoom
+        reset_btn = QPushButton('🔄 Reset Zoom')
+        reset_btn.clicked.connect(self.reset_zoom)
+        zoom_layout.addWidget(reset_btn)
+        
+        layout.addLayout(zoom_layout)
+        
+        # Status bar
+        self.status_label = QLabel('🔄 Caricamento dati...')
+        self.status_label.setStyleSheet("font-size: 11px; color: #aaaaaa; padding: 5px;")
+        layout.addWidget(self.status_label)
+        
+        self.setLayout(layout)
+        
+        # Variabili per zoom
+        self.zoom_factor = 1.0
+        self.original_xlim = None
+        self.original_ylim = None
+
+    def load_chart_data(self):
+        """Carica i dati per il grafico"""
+        try:
+            self.status_label.setText('🔄 Scaricamento dati da Yahoo Finance...')
+            
+            # Scarica i dati storici
+            ticker = yf.Ticker(self.symbol)
+            hist_data = ticker.history(period=self.current_period, interval='1d')
+            
+            if hist_data.empty:
+                self.status_label.setText('❌ Nessun dato disponibile per questo periodo')
+                return
+            
+            # Pulisce il grafico precedente
+            self.figure.clear()
+            
+            # Crea il subplot
+            ax = self.figure.add_subplot(111)
+            ax.set_facecolor('#1e1e1e')
+            
+            # Prepara i dati
+            dates = hist_data.index
+            prices = hist_data['Close']
+            highs = hist_data['High']
+            lows = hist_data['Low']
+            volumes = hist_data['Volume'] if 'Volume' in hist_data else None
+            
+            # Grafico principale - linea dei prezzi
+            ax.plot(dates, prices, color='#4da6ff', linewidth=2, label=f'{self.pair_name} Close')
+            ax.fill_between(dates, lows, highs, alpha=0.1, color='#4da6ff', label='High-Low Range')
+            
+            # Configurazione assi
+            ax.set_xlabel('Data', color='white', fontsize=12)
+            ax.set_ylabel('Prezzo', color='white', fontsize=12)
+            ax.set_title(f'{self.pair_name} - {self.periods[self.current_period]}', 
+                        color='white', fontsize=14, fontweight='bold', pad=20)
+            
+            # Formattazione date
+            if len(dates) > 30:
+                ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+            else:
+                ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
+            
+            # Colori assi
+            ax.tick_params(colors='white')
+            ax.spines['bottom'].set_color('white')
+            ax.spines['top'].set_color('white')
+            ax.spines['right'].set_color('white')
+            ax.spines['left'].set_color('white')
+            
+            # Griglia
+            ax.grid(True, alpha=0.3, color='white')
+            
+            # Legenda
+            ax.legend(loc='upper left', facecolor='#2b2b2b', edgecolor='white', labelcolor='white')
+            
+            # Salva i limiti originali per il reset zoom
+            self.original_xlim = ax.get_xlim()
+            self.original_ylim = ax.get_ylim()
+            
+            # Aggiusta layout
+            self.figure.tight_layout()
+            
+            # Aggiorna canvas
+            self.canvas.draw()
+            
+            # Aggiorna status
+            last_price = prices.iloc[-1]
+            first_price = prices.iloc[0]
+            change = last_price - first_price
+            change_percent = (change / first_price) * 100
+            
+            change_symbol = "📈" if change >= 0 else "📉"
+            self.status_label.setText(f'✅ Dati aggiornati - Ultimo: {last_price:.4f} '
+                                    f'{change_symbol} {change:+.4f} ({change_percent:+.2f}%) '
+                                    f'- {len(prices)} punti dati')
+            
+        except Exception as e:
+            self.status_label.setText(f'❌ Errore nel caricamento: {str(e)}')
+            print(f"Errore grafico: {e}")
+
+    def change_period(self, new_period):
+        """Cambia il periodo del grafico"""
+        # Aggiorna stato dei pulsanti
+        for period, btn in self.period_buttons.items():
+            btn.setChecked(period == new_period)
+        
+        self.current_period = new_period
+        self.zoom_factor = 1.0
+        self.zoom_slider.setValue(100)
+        self.zoom_label.setText('100%')
+        self.load_chart_data()
+
+    def on_scroll(self, event):
+        """Gestisce lo zoom con la rotella del mouse"""
+        if event.inaxes:
+            # Calcola il fattore di zoom
+            zoom_intensity = 0.1
+            if event.button == 'up':
+                scale_factor = 1 + zoom_intensity
+            elif event.button == 'down':
+                scale_factor = 1 - zoom_intensity
+            else:
+                return
+            
+            # Applica lo zoom
+            xlim = event.inaxes.get_xlim()
+            ylim = event.inaxes.get_ylim()
+            
+            # Calcola nuovo range
+            xdata = event.xdata
+            ydata = event.ydata
+            
+            new_xlim = [xdata - (xdata - xlim[0]) / scale_factor,
+                       xdata + (xlim[1] - xdata) / scale_factor]
+            new_ylim = [ydata - (ydata - ylim[0]) / scale_factor,
+                       ydata + (ylim[1] - ydata) / scale_factor]
+            
+            event.inaxes.set_xlim(new_xlim)
+            event.inaxes.set_ylim(new_ylim)
+            
+            # Aggiorna zoom factor e slider
+            self.zoom_factor *= scale_factor
+            slider_value = int(self.zoom_factor * 100)
+            slider_value = max(10, min(500, slider_value))
+            self.zoom_slider.setValue(slider_value)
+            self.zoom_label.setText(f'{slider_value}%')
+            
+            self.canvas.draw()
+
+    def on_zoom_slider(self, value):
+        """Gestisce il cambiamento dello slider zoom"""
+        self.zoom_label.setText(f'{value}%')
+        new_zoom_factor = value / 100.0
+        
+        if hasattr(self, 'original_xlim') and self.original_xlim:
+            ax = self.figure.gca()
+            
+            # Calcola nuovo range basato sul fattore di zoom
+            x_center = sum(self.original_xlim) / 2
+            y_center = sum(self.original_ylim) / 2
+            
+            x_range = (self.original_xlim[1] - self.original_xlim[0]) / new_zoom_factor
+            y_range = (self.original_ylim[1] - self.original_ylim[0]) / new_zoom_factor
+            
+            ax.set_xlim([x_center - x_range/2, x_center + x_range/2])
+            ax.set_ylim([y_center - y_range/2, y_center + y_range/2])
+            
+            self.zoom_factor = new_zoom_factor
+            self.canvas.draw()
+
+    def zoom_in(self):
+        """Zoom in del 25%"""
+        current_value = self.zoom_slider.value()
+        new_value = min(500, int(current_value * 1.25))
+        self.zoom_slider.setValue(new_value)
+
+    def zoom_out(self):
+        """Zoom out del 25%"""
+        current_value = self.zoom_slider.value()
+        new_value = max(10, int(current_value * 0.8))
+        self.zoom_slider.setValue(new_value)
+
+    def reset_zoom(self):
+        """Reset del zoom ai valori originali"""
+        self.zoom_slider.setValue(100)
+        if hasattr(self, 'original_xlim') and self.original_xlim:
+            ax = self.figure.gca()
+            ax.set_xlim(self.original_xlim)
+            ax.set_ylim(self.original_ylim)
+            self.canvas.draw()
+
+    def refresh_chart(self):
+        """Aggiorna i dati del grafico"""
+        self.load_chart_data()
+
+    def wheelEvent(self, event):
+        """Override dell'evento wheel per supportare zoom su tutta la finestra"""
+        # Se il mouse non è sopra il canvas, gestisci l'evento normalmente
+        if not self.canvas.underMouse():
+            super().wheelEvent(event)
 
 class ChatsDialog(QDialog):
     def __init__(self, parent=None):
@@ -2182,7 +2590,13 @@ class MainApp(QApplication):
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                    content = f.read().strip()
+                    if not content:  # File vuoto
+                        self.login_widget.show()
+                        return
+                        
+                    data = json.loads(content)
+                    
                 api_id = str(data.get('api_id', ''))
                 api_hash = data.get('api_hash', '')
                 phone = data.get('phone', '')
@@ -2194,8 +2608,10 @@ class MainApp(QApplication):
                     QTimer.singleShot(1000, lambda: self.on_login(api_id, api_hash, phone, auto_login=True))
                 else:
                     self.login_widget.show()
-            except Exception as e:
-                print(f"Errore nel caricamento config: {e}")
+            except (json.JSONDecodeError, Exception) as e:
+                print(f"Errore nel caricamento config per auto-login: {e}")
+                # Non rimuovere il file, potrebbe contenere dati importanti
+                # Invece mostra il widget di login
                 self.login_widget.show()
         else:
             self.login_widget.show()

@@ -1,17 +1,9 @@
 {
   "sound_notifications": false,
-<<<<<<< HEAD
   "desktop_notifications": false,
-=======
-  "desktop_notifications": true,
->>>>>>> 6b97fcd9cf6a24b452bb57c27d7ad49d161200f1
   "minimize_to_tray": false,
   "max_messages": 1000,
   "auto_scroll": true,
   "auto_save_images": true,
   "debug_mode": false
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 6b97fcd9cf6a24b452bb57c27d7ad49d161200f1
