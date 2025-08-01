@@ -1,0 +1,9 @@
+{
+  "sound_notifications": false,
+  "desktop_notifications": false,
+  "minimize_to_tray": false,
+  "max_messages": 1000,
+  "auto_scroll": true,
+  "auto_save_images": true,
+  "debug_mode": false
+}

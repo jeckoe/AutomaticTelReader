@@ -45,5 +45,23 @@
     "is_verified": false,
     "is_scam": false,
     "is_gigagroup": false
+  },
+  "1340573360": {
+    "id": "1340573360",
+    "type": "channel",
+    "title": "VIPERFX Premium Channel",
+    "username": "viperpremiu",
+    "is_verified": false,
+    "is_scam": false,
+    "is_gigagroup": false
+  },
+  "1284268486": {
+    "id": "1284268486",
+    "type": "channel",
+    "title": "Easy Forex 👑 OFFICIAL CHANNEL",
+    "username": "EasyForexPips",
+    "is_verified": false,
+    "is_scam": false,
+    "is_gigagroup": false
   }
 }

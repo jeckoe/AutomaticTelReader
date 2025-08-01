@@ -13,6 +13,9 @@ import datetime
 from telethon.tl.types import User, Channel, Chat
 import base64
 import uuid
+import yfinance as yf
+import requests
+from datetime import datetime as dt
 IMAGES_FILE = 'images.json'
 
 API_ID = ''
@@ -520,12 +523,17 @@ class SettingsDialog(QDialog):
         messages_group = QGroupBox("💬 Gestione Messaggi")
         messages_layout = QVBoxLayout()
         
-        messages_layout.addWidget(QLabel("Numero massimo di messaggi da visualizzare:"))
+        max_messages_layout = QHBoxLayout()
+        max_messages_label = QLabel("Numero massimo di messaggi da visualizzare:")
+        max_messages_layout.addWidget(max_messages_label)
         self.max_messages = QSpinBox()
         self.max_messages.setRange(50, 10000)
         self.max_messages.setValue(1000)
         self.max_messages.setSuffix(" messaggi")
-        messages_layout.addWidget(self.max_messages)
+        self.max_messages.setMinimumWidth(180)  # Più largo per leggibilità
+        max_messages_layout.addWidget(self.max_messages)
+        max_messages_layout.addStretch()
+        messages_layout.addLayout(max_messages_layout)
         
         self.auto_scroll = QCheckBox("Scorri automaticamente ai nuovi messaggi")
         self.auto_scroll.setChecked(True)
@@ -1016,9 +1024,8 @@ class ImageDialog(QDialog):
                 self.zoom_label = QLabel('100%')  # Inizializza qui per evitare errori
                 
                 # Scala l'immagine per adattarla inizialmente
-                self.update_image_display()
-                
                 scroll_area.setWidget(self.image_label)
+                QTimer.singleShot(0, self.reset_zoom)
             else:
                 error_label = QLabel("❌ Impossibile caricare l'immagine")
                 error_label.setAlignment(Qt.AlignCenter)
@@ -1174,6 +1181,11 @@ class MessagesOfChatDialog(QDialog):
                 text = msg.get('text', '')
                 date = msg.get('date', '')
                 image_id = msg.get('image_id')
+                # Visualizzazione stile WhatsApp
+                if image_id and not text.strip():
+                    text = "[Immagine]"
+                elif image_id and text.strip():
+                    text = f"[Immagine] {text}"
                 display = f"[{date}] {text}"
                 item = QListWidgetItem(display)
                 if image_id:
@@ -1202,6 +1214,355 @@ class MessagesOfChatDialog(QDialog):
                 images = json.load(f)
             return images.get(image_id)
         return None
+
+class TradingDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('📈 Trading Forex - Dati Reali')
+        self.setMinimumSize(900, 700)
+        self.forex_data = {}
+        self.setup_ui()
+        self.load_real_forex_data()
+
+    def setup_ui(self):
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QListWidget {
+                background: #333333;
+                border: 1px solid #555555;
+                border-radius: 8px;
+                padding: 5px;
+                font-size: 12px;
+                color: #ffffff;
+            }
+            QListWidget::item {
+                padding: 12px;
+                border-bottom: 1px solid #444444;
+                border-radius: 4px;
+                margin-bottom: 2px;
+                color: #ffffff;
+            }
+            QListWidget::item:hover {
+                background-color: #404040;
+            }
+            QListWidget::item:selected {
+                background-color: #0078d4;
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+            QLabel {
+                font-size: 12px;
+                color: #ffffff;
+            }
+            QFrame {
+                background-color: #333333;
+                border: 1px solid #555555;
+                border-radius: 8px;
+            }
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #555555;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #333333;
+                color: #ffffff;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+                color: #4da6ff;
+            }
+        """)
+        
+        layout = QHBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        
+        # Pannello sinistro con lista forex
+        left_frame = QFrame()
+        left_frame.setFixedWidth(320)
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(15, 15, 15, 15)
+        left_layout.setSpacing(10)
+        
+        # Titolo lista forex
+        forex_title = QLabel('💱 Coppie Forex in Tempo Reale')
+        forex_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #4da6ff;")
+        left_layout.addWidget(forex_title)
+        
+        # Status di caricamento
+        self.loading_label = QLabel('🔄 Caricamento dati in corso...')
+        self.loading_label.setStyleSheet("font-size: 11px; color: #cccccc; font-style: italic;")
+        self.loading_label.setAlignment(Qt.AlignCenter)
+        left_layout.addWidget(self.loading_label)
+        
+        # Lista forex
+        self.forex_list = QListWidget()
+        self.forex_list.itemClicked.connect(self.on_forex_selected)
+        left_layout.addWidget(self.forex_list)
+        
+        # Informazioni aggiuntive
+        info_label = QLabel('💡 Dati forniti da Yahoo Finance\n📊 Clicca su una coppia per dettagli')
+        info_label.setStyleSheet("font-size: 10px; color: #aaaaaa; font-style: italic;")
+        info_label.setWordWrap(True)
+        left_layout.addWidget(info_label)
+        
+        layout.addWidget(left_frame)
+        
+        # Pannello destro con dettagli
+        right_frame = QFrame()
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(20, 20, 20, 20)
+        right_layout.setSpacing(15)
+        
+        # Titolo dettagli
+        self.details_title = QLabel('📊 Seleziona una coppia forex')
+        self.details_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        right_layout.addWidget(self.details_title)
+        
+        # Gruppo quotazioni in tempo reale
+        quote_group = QGroupBox("💹 Quotazione Attuale")
+        quote_layout = QVBoxLayout()
+        
+        self.current_price_label = QLabel("Prezzo: -")
+        self.current_price_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #4da6ff;")
+        
+        self.change_label = QLabel("Variazione: -")
+        self.change_percent_label = QLabel("Variazione %: -")
+        self.bid_ask_label = QLabel("Bid/Ask: -")
+        self.last_update_label = QLabel("Ultimo aggiornamento: -")
+        self.last_update_label.setStyleSheet("font-size: 10px; color: #aaaaaa;")
+        
+        quote_layout.addWidget(self.current_price_label)
+        quote_layout.addWidget(self.change_label)
+        quote_layout.addWidget(self.change_percent_label)
+        quote_layout.addWidget(self.bid_ask_label)
+        quote_layout.addWidget(self.last_update_label)
+        quote_group.setLayout(quote_layout)
+        right_layout.addWidget(quote_group)
+        
+        # Gruppo informazioni di base
+        basic_info_group = QGroupBox("ℹ️ Informazioni di Base")
+        basic_info_layout = QVBoxLayout()
+        
+        self.pair_name_label = QLabel("Nome: -")
+        self.pair_description_label = QLabel("Descrizione: -")
+        self.market_cap_label = QLabel("Volume: -")
+        
+        basic_info_layout.addWidget(self.pair_name_label)
+        basic_info_layout.addWidget(self.pair_description_label)
+        basic_info_layout.addWidget(self.market_cap_label)
+        basic_info_group.setLayout(basic_info_layout)
+        right_layout.addWidget(basic_info_group)
+        
+        # Gruppo dati storici
+        historical_group = QGroupBox("� Dati Storici (52 settimane)")
+        historical_layout = QVBoxLayout()
+        
+        self.high_52w_label = QLabel("Massimo 52w: -")
+        self.low_52w_label = QLabel("Minimo 52w: -")
+        self.range_52w_label = QLabel("Range 52w: -")
+        
+        historical_layout.addWidget(self.high_52w_label)
+        historical_layout.addWidget(self.low_52w_label)
+        historical_layout.addWidget(self.range_52w_label)
+        historical_group.setLayout(historical_layout)
+        right_layout.addWidget(historical_group)
+        
+        # Spazio elastico
+        right_layout.addStretch()
+        
+        # Pulsanti azioni
+        actions_layout = QHBoxLayout()
+        
+        self.refresh_btn = QPushButton('🔄 Aggiorna Dati')
+        self.refresh_btn.clicked.connect(self.refresh_data)
+        actions_layout.addWidget(self.refresh_btn)
+        
+        actions_layout.addStretch()
+        
+        close_btn = QPushButton('✅ Chiudi')
+        close_btn.clicked.connect(self.accept)
+        actions_layout.addWidget(close_btn)
+        
+        right_layout.addLayout(actions_layout)
+        layout.addWidget(right_frame)
+        
+        self.setLayout(layout)
+
+    def load_real_forex_data(self):
+        """Carica dati forex reali da Yahoo Finance"""
+        # Lista delle principali coppie forex con i loro simboli Yahoo Finance
+        forex_symbols = {
+            "EURUSD=X": {"name": "Euro / Dollaro Americano", "pair": "EUR/USD"},
+            "GBPUSD=X": {"name": "Sterlina / Dollaro Americano", "pair": "GBP/USD"},
+            "USDJPY=X": {"name": "Dollaro Americano / Yen Giapponese", "pair": "USD/JPY"},
+            "AUDUSD=X": {"name": "Dollaro Australiano / Dollaro Americano", "pair": "AUD/USD"},
+            "USDCAD=X": {"name": "Dollaro Americano / Dollaro Canadese", "pair": "USD/CAD"},
+            "USDCHF=X": {"name": "Dollaro Americano / Franco Svizzero", "pair": "USD/CHF"},
+            "NZDUSD=X": {"name": "Dollaro Neozelandese / Dollaro Americano", "pair": "NZD/USD"},
+            "EURGBP=X": {"name": "Euro / Sterlina", "pair": "EUR/GBP"},
+            "EURJPY=X": {"name": "Euro / Yen Giapponese", "pair": "EUR/JPY"},
+            "GBPJPY=X": {"name": "Sterlina / Yen Giapponese", "pair": "GBP/JPY"}
+        }
+        
+        self.loading_label.setText('🔄 Caricamento dati da Yahoo Finance...')
+        self.forex_list.clear()
+        
+        # Carica i dati per ogni coppia
+        loaded_count = 0
+        for symbol, info in forex_symbols.items():
+            try:
+                # Scarica i dati usando yfinance
+                ticker = yf.Ticker(symbol)
+                data = ticker.info
+                hist = ticker.history(period="1d")
+                
+                if not hist.empty:
+                    current_price = hist['Close'].iloc[-1]
+                    open_price = hist['Open'].iloc[-1]
+                    high_price = hist['High'].iloc[-1]
+                    low_price = hist['Low'].iloc[-1]
+                    volume = hist['Volume'].iloc[-1] if 'Volume' in hist else 0
+                    
+                    # Calcola la variazione
+                    change = current_price - open_price
+                    change_percent = (change / open_price) * 100 if open_price != 0 else 0
+                    
+                    # Ottieni dati storici per 52 settimane
+                    hist_52w = ticker.history(period="1y")
+                    high_52w = hist_52w['High'].max() if not hist_52w.empty else current_price
+                    low_52w = hist_52w['Low'].min() if not hist_52w.empty else current_price
+                    
+                    forex_info = {
+                        'symbol': symbol,
+                        'name': info['name'],
+                        'pair': info['pair'],
+                        'current_price': current_price,
+                        'change': change,
+                        'change_percent': change_percent,
+                        'high': high_price,
+                        'low': low_price,
+                        'volume': volume,
+                        'high_52w': high_52w,
+                        'low_52w': low_52w,
+                        'bid': data.get('bid', current_price),
+                        'ask': data.get('ask', current_price),
+                        'last_update': dt.now().strftime('%H:%M:%S')
+                    }
+                    
+                    self.forex_data[symbol] = forex_info
+                    
+                    # Crea l'item per la lista
+                    change_color = "🟢" if change >= 0 else "🔴"
+                    change_text = f"+{change:.4f}" if change >= 0 else f"{change:.4f}"
+                    
+                    item_text = f"💱 {info['pair']}\n   {current_price:.4f} {change_color} {change_text} ({change_percent:+.2f}%)"
+                    item = QListWidgetItem(item_text)
+                    item.setData(Qt.UserRole, symbol)
+                    
+                    # Colore in base al trend
+                    if change >= 0:
+                        item.setBackground(QColor('#28a745').darker(150))
+                    else:
+                        item.setBackground(QColor('#dc3545').darker(150))
+                    
+                    self.forex_list.addItem(item)
+                    loaded_count += 1
+                    
+                    # Aggiorna il label di caricamento
+                    self.loading_label.setText(f'🔄 Caricati {loaded_count}/{len(forex_symbols)} coppie...')
+                    
+            except Exception as e:
+                print(f"Errore nel caricamento di {symbol}: {str(e)}")
+                continue
+        
+        # Aggiorna il label finale
+        if loaded_count > 0:
+            self.loading_label.setText(f'✅ {loaded_count} coppie caricate - Aggiornato: {dt.now().strftime("%H:%M:%S")}')
+        else:
+            self.loading_label.setText('❌ Errore nel caricamento - Controlla la connessione internet')
+
+    def on_forex_selected(self, item):
+        """Gestisce la selezione di una coppia forex"""
+        symbol = item.data(Qt.UserRole)
+        if symbol and symbol in self.forex_data:
+            data = self.forex_data[symbol]
+            
+            # Aggiorna il titolo
+            self.details_title.setText(f"� {data['pair']} - {data['name']}")
+            
+            # Aggiorna quotazione attuale
+            self.current_price_label.setText(f"Prezzo: {data['current_price']:.4f}")
+            
+            # Colore per la variazione
+            if data['change'] >= 0:
+                change_color = "#28a745"  # Verde
+                change_symbol = "🟢 +"
+            else:
+                change_color = "#dc3545"  # Rosso
+                change_symbol = "🔴 "
+            
+            self.change_label.setText(f"Variazione: {change_symbol}{data['change']:.4f}")
+            self.change_label.setStyleSheet(f"color: {change_color}; font-weight: bold;")
+            
+            self.change_percent_label.setText(f"Variazione %: {change_symbol}{data['change_percent']:.2f}%")
+            self.change_percent_label.setStyleSheet(f"color: {change_color}; font-weight: bold;")
+            
+            self.bid_ask_label.setText(f"Bid/Ask: {data['bid']:.4f} / {data['ask']:.4f}")
+            self.last_update_label.setText(f"Ultimo aggiornamento: {data['last_update']}")
+            
+            # Aggiorna informazioni di base
+            self.pair_name_label.setText(f"Nome: {data['name']}")
+            self.pair_description_label.setText(f"Simbolo: {data['symbol']}")
+            
+            if data['volume'] > 0:
+                self.market_cap_label.setText(f"Volume: {data['volume']:,.0f}")
+            else:
+                self.market_cap_label.setText("Volume: N/A (forex)")
+            
+            # Aggiorna dati storici
+            self.high_52w_label.setText(f"Massimo 52w: {data['high_52w']:.4f}")
+            self.low_52w_label.setText(f"Minimo 52w: {data['low_52w']:.4f}")
+            
+            range_52w = data['high_52w'] - data['low_52w']
+            self.range_52w_label.setText(f"Range 52w: {range_52w:.4f}")
+
+    def refresh_data(self):
+        """Aggiorna i dati forex"""
+        self.refresh_btn.setEnabled(False)
+        self.refresh_btn.setText('🔄 Aggiornamento...')
+        
+        # Ricarica i dati
+        QTimer.singleShot(100, self._do_refresh)
+
+    def _do_refresh(self):
+        """Esegue l'aggiornamento effettivo"""
+        try:
+            self.load_real_forex_data()
+            QMessageBox.information(self, 'Aggiornamento Completato', 
+                f'✅ Dati forex aggiornati con successo!\n\nUltimo aggiornamento: {dt.now().strftime("%H:%M:%S")}')
+        except Exception as e:
+            QMessageBox.warning(self, 'Errore Aggiornamento', 
+                f'❌ Errore durante l\'aggiornamento:\n{str(e)}\n\nControlla la connessione internet.')
+        finally:
+            self.refresh_btn.setEnabled(True)
+            self.refresh_btn.setText('🔄 Aggiorna Dati')
 
 class ChatsDialog(QDialog):
     def __init__(self, parent=None):
@@ -1276,16 +1637,17 @@ class MessageItemWidget(QWidget):
         # Testo del messaggio
         text = self.msg_data.get('text', '')
         image_id = self.msg_data.get('image_id')
-        
+
+        # Visualizzazione stile WhatsApp
         if image_id and not text.strip():
-            text = "🖼️ [Immagine]"
+            text = "[Immagine]"
         elif image_id and text.strip():
-            text = f"🖼️ {text}"
-        
+            text = f"[Immagine] {text}"
+
         if len(text) > 100:
             text = text[:100] + "..."
-        
-        text_label = QLabel(f"💬 {text}")
+
+        text_label = QLabel(text)
         text_label.setStyleSheet("font-size: 12px; color: #ffffff;")
         text_label.setWordWrap(True)
         text_layout.addWidget(text_label)
@@ -1505,12 +1867,15 @@ class MessagesWidget(QWidget):
         self.chats_btn.clicked.connect(self.open_chats)
         left_layout.addWidget(self.chats_btn)
         
-        left_layout.addWidget(QLabel(""))  # Spacer
         
         # Pulsanti di utilità
         self.settings_btn = QPushButton('⚙️ Impostazioni')
         self.settings_btn.clicked.connect(self.open_settings)
         left_layout.addWidget(self.settings_btn)
+        
+        self.trading_btn = QPushButton('📈 Trading')
+        self.trading_btn.clicked.connect(self.open_trading)
+        left_layout.addWidget(self.trading_btn)
         
         self.clear_btn = QPushButton('🗑️ Elimina Cronologia')
         self.clear_btn.setStyleSheet("""
@@ -1659,6 +2024,11 @@ class MessagesWidget(QWidget):
         """Apre una finestra delle impostazioni"""
         settings_dialog = SettingsDialog(self)
         settings_dialog.exec()
+
+    def open_trading(self):
+        """Apre la finestra del trading forex"""
+        trading_dialog = TradingDialog(self)
+        trading_dialog.exec()
 
     def set_session_start_time(self, start_time):
         self.session_start_time = start_time
